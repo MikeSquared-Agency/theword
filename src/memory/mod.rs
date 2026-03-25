@@ -268,6 +268,23 @@ fn format_context_doc(nodes: &[ScoredNode], contradictions: &[ContradictionPair]
         doc.push('\n');
     }
 
+    // Recent conversation context (UserInput nodes from previous turns)
+    let conversation: Vec<&ScoredNode> = nodes
+        .iter()
+        .filter(|s| matches!(s.node.kind, NodeKind::UserInput))
+        .collect();
+    if !conversation.is_empty() {
+        doc.push_str("## Recent conversation\n");
+        for s in &conversation {
+            let body = s.node.body.as_deref().unwrap_or(&s.node.title);
+            doc.push_str(&format!(
+                "- User said (score: {:.3}): {}\n",
+                s.score, body
+            ));
+        }
+        doc.push('\n');
+    }
+
     // Active contradictions
     if !contradictions.is_empty() {
         doc.push_str("## Active contradictions\n");

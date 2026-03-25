@@ -20,6 +20,8 @@ pub enum NodeKind {
     Soul,
     Belief,
     Goal,
+    // Conversational — user inputs stored for graph-based recall
+    UserInput,
     // Operational — decay fast, low importance
     Session,
     Turn,
@@ -43,6 +45,7 @@ impl NodeKind {
             Self::Entity => "entity",
             Self::Concept => "concept",
             Self::Decision => "decision",
+            Self::UserInput => "user_input",
             Self::Soul => "soul",
             Self::Belief => "belief",
             Self::Goal => "goal",
@@ -66,6 +69,7 @@ impl NodeKind {
             "entity" => Some(Self::Entity),
             "concept" => Some(Self::Concept),
             "decision" => Some(Self::Decision),
+            "user_input" => Some(Self::UserInput),
             "soul" => Some(Self::Soul),
             "belief" => Some(Self::Belief),
             "goal" => Some(Self::Goal),
@@ -89,6 +93,8 @@ impl NodeKind {
         match self {
             // Identity nodes never decay
             Self::Soul | Self::Belief | Self::Goal => 0.0,
+            // User inputs decay moderately (they're conversation context)
+            Self::UserInput => 0.02,
             // Operational nodes decay fast
             Self::Session | Self::Turn | Self::LlmCall
             | Self::ToolCall | Self::LoopIteration => 0.05,
@@ -103,6 +109,7 @@ impl NodeKind {
     pub fn default_importance(&self) -> f64 {
         match self {
             Self::Soul | Self::Belief | Self::Goal => 1.0,
+            Self::UserInput => 0.4,
             Self::Session | Self::Turn | Self::LlmCall
             | Self::ToolCall | Self::LoopIteration => 0.2,
             _ => 0.5,

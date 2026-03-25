@@ -214,16 +214,84 @@ impl Agent {
     }
 
     /// Run a single turn within an ongoing chat session.
-    /// Takes the existing message history and appends the new user message.
-    /// Returns the assistant's response text.
+    ///
+    /// Each turn is self-contained: the user's input is stored as a `UserInput`
+    /// node in the graph, a fresh briefing is built by semantic recall (so prior
+    /// turns that are relevant surface naturally), and the LLM receives only
+    /// `[system(briefing), user(input)]` — no growing message history.
+    ///
+    /// Tool-call loops use a temporary message vec within the turn.
     pub async fn run_turn(
         &self,
         session_id: &NodeId,
-        messages: &mut Vec<Message>,
         input: &str,
     ) -> Result<String> {
-        // Append user message
-        messages.push(Message::user(input));
+        // 1. Store the user's input as a UserInput node in the graph
+        let user_node = Node::new(NodeKind::UserInput, input)
+            .with_body(input)
+            .with_importance(0.4)
+            .with_decay_rate(0.02);
+        let user_node_id = user_node.id.clone();
+
+        // Embed and store
+        let text = user_node.embed_text();
+        let embedding = self.embed.embed(&text).await?;
+        let embedding_blob = bytemuck::cast_slice::<f32, u8>(&embedding).to_vec();
+        let mut stored_node = user_node.clone();
+        stored_node.embedding = Some(embedding.clone());
+
+        self.db
+            .call({
+                let mut n = stored_node.clone();
+                n.embedding = Some(bytemuck::cast_slice::<u8, f32>(&embedding_blob).to_vec());
+                move |conn| queries::insert_node(conn, &n)
+            })
+            .await?;
+
+        // Insert into HNSW for future recall
+        {
+            let mut index = self.hnsw.write().await;
+            index.insert(user_node_id.clone(), embedding);
+        }
+
+        // Link UserInput → Session
+        let edge = Edge::new(user_node_id.clone(), session_id.to_string(), EdgeKind::PartOf);
+        self.db
+            .call(move |conn| queries::insert_edge(conn, &edge))
+            .await?;
+
+        // Trigger auto-link (connects to related nodes)
+        let _ = self.auto_link_tx.try_send(user_node_id);
+
+        // 2. Build a FRESH briefing using the input as semantic query
+        //    Prior UserInput nodes and Fact responses that are relevant will
+        //    surface naturally through HNSW recall.
+        let brief = memory::briefing_with_kinds(
+            &self.db,
+            &self.embed,
+            &self.hnsw,
+            &self.config,
+            input,
+            &[
+                NodeKind::Soul,
+                NodeKind::Belief,
+                NodeKind::Goal,
+                NodeKind::Fact,
+                NodeKind::UserInput,
+                NodeKind::Decision,
+                NodeKind::Pattern,
+                NodeKind::Capability,
+                NodeKind::Limitation,
+            ],
+            16, // slightly more nodes to capture conversation context
+        )
+        .await?;
+
+        // 3. Build messages — just system + user, no history
+        let mut messages = vec![
+            Message::system(brief.context_doc),
+            Message::user(input),
+        ];
 
         let mut iter: usize = 0;
 
@@ -249,9 +317,9 @@ impl Agent {
             let start = Instant::now();
             let tool_defs = self.tools.anthropic_tool_defs();
             let response = if tool_defs.is_empty() {
-                self.llm.complete(messages).await?
+                self.llm.complete(&messages).await?
             } else {
-                self.llm.complete_with_tools(messages, &tool_defs).await?
+                self.llm.complete_with_tools(&messages, &tool_defs).await?
             };
             let latency_ms = start.elapsed().as_millis() as u64;
 
@@ -284,6 +352,7 @@ impl Agent {
 
             match response.stop_reason {
                 StopReason::ToolUse => {
+                    // Tool calls stay in the temporary messages vec for this turn
                     if let Some(raw) = response.raw_content.clone() {
                         messages.push(Message::assistant_raw(raw));
                     } else {
@@ -313,10 +382,7 @@ impl Agent {
                     }
                 }
                 StopReason::EndTurn | StopReason::MaxTokens => {
-                    // Append assistant response to conversation history
-                    messages.push(Message::assistant(&response.text));
-
-                    // Store fact from response
+                    // Store the response as a Fact node in the graph
                     let fact = Node::fact_from_response(&response.text, session_id);
                     let fact_id = fact.id.clone();
                     self.db
@@ -334,21 +400,6 @@ impl Agent {
                         .call(move |conn| queries::insert_edge(conn, &derives))
                         .await?;
                     let _ = self.auto_link_tx.try_send(fact_id);
-
-                    // Context compaction
-                    if messages.len() > self.config.compaction_threshold {
-                        let _ = crate::compact_session(
-                            &self.db,
-                            &self.embed,
-                            &self.hnsw,
-                            &self.config,
-                            &self.auto_link_tx,
-                            session_id,
-                            messages,
-                            self.llm.as_ref(),
-                        )
-                        .await;
-                    }
 
                     return Ok(response.text);
                 }

@@ -258,30 +258,7 @@ pub async fn run() -> crate::error::Result<()> {
                             })
                             .await?;
 
-                        // Build initial briefing
-                        let brief = crate::memory::briefing_with_kinds(
-                            &cx.db,
-                            &cx.embed,
-                            &cx.hnsw,
-                            &cx.config,
-                            "tui chat session",
-                            &[
-                                crate::types::NodeKind::Soul,
-                                crate::types::NodeKind::Belief,
-                                crate::types::NodeKind::Goal,
-                                crate::types::NodeKind::Fact,
-                                crate::types::NodeKind::Decision,
-                                crate::types::NodeKind::Pattern,
-                            ],
-                            12,
-                        )
-                        .await?;
-
-                        let messages = vec![
-                            crate::types::Message::system(brief.context_doc),
-                        ];
-
-                        graph_tui::run_with_chat(cx.db.clone(), agent, session_id, messages)
+                        graph_tui::run_with_chat(cx.db.clone(), agent, session_id)
                             .await
                             .map_err(|e| crate::error::CortexError::Config(format!("TUI error: {e}")))?;
                     }
@@ -488,30 +465,6 @@ pub async fn run() -> crate::error::Result<()> {
                 })
                 .await?;
 
-            // Build initial briefing from memory
-            let brief = crate::memory::briefing_with_kinds(
-                &cx.db,
-                &cx.embed,
-                &cx.hnsw,
-                &cx.config,
-                "chat session",
-                &[
-                    crate::types::NodeKind::Soul,
-                    crate::types::NodeKind::Belief,
-                    crate::types::NodeKind::Goal,
-                    crate::types::NodeKind::Fact,
-                    crate::types::NodeKind::Decision,
-                    crate::types::NodeKind::Pattern,
-                ],
-                12,
-            )
-            .await?;
-
-            // Persistent message history for the whole chat
-            let mut messages = vec![
-                crate::types::Message::system(brief.context_doc),
-            ];
-
             println!("cortex chat — type 'exit' or Ctrl+C to quit\n");
             let stdin = io::stdin();
             loop {
@@ -525,7 +478,7 @@ pub async fn run() -> crate::error::Result<()> {
                 if input == "exit" || input == "quit" {
                     break;
                 }
-                match agent.run_turn(&session_id, &mut messages, input).await {
+                match agent.run_turn(&session_id, input).await {
                     Ok(response) => println!("\n{response}\n"),
                     Err(e) => eprintln!("\nError: {e}\n"),
                 }

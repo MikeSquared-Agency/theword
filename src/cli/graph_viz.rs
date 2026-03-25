@@ -15,6 +15,8 @@ fn kind_color(kind: NodeKind) -> &'static str {
         NodeKind::Soul | NodeKind::Belief | NodeKind::Goal => "\x1b[95m",
         // Knowledge → cyan
         NodeKind::Fact | NodeKind::Entity | NodeKind::Concept | NodeKind::Decision => "\x1b[96m",
+        // Conversational → light cyan
+        NodeKind::UserInput => "\x1b[96m",
         // Operational → yellow
         NodeKind::Session | NodeKind::Turn | NodeKind::LlmCall
         | NodeKind::ToolCall | NodeKind::LoopIteration => "\x1b[93m",
@@ -51,6 +53,7 @@ fn kind_category(kind: NodeKind) -> &'static str {
     match kind {
         NodeKind::Soul | NodeKind::Belief | NodeKind::Goal => "Identity",
         NodeKind::Fact | NodeKind::Entity | NodeKind::Concept | NodeKind::Decision => "Knowledge",
+        NodeKind::UserInput => "Conversational",
         NodeKind::Session | NodeKind::Turn | NodeKind::LlmCall
         | NodeKind::ToolCall | NodeKind::LoopIteration => "Operational",
         NodeKind::Pattern | NodeKind::Limitation | NodeKind::Capability => "Self-Model",

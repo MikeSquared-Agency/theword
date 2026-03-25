@@ -26,6 +26,7 @@ fn kind_color(kind: NodeKind) -> Color {
     match kind {
         NodeKind::Soul | NodeKind::Belief | NodeKind::Goal => Color::Magenta,
         NodeKind::Fact | NodeKind::Entity | NodeKind::Concept | NodeKind::Decision => Color::Cyan,
+        NodeKind::UserInput => Color::LightCyan,
         NodeKind::Session | NodeKind::Turn | NodeKind::LlmCall
         | NodeKind::ToolCall | NodeKind::LoopIteration => Color::Yellow,
         NodeKind::Pattern | NodeKind::Limitation | NodeKind::Capability => Color::Green,
@@ -61,12 +62,13 @@ fn short_id(id: &str) -> String {
 
 // ─── Category helpers ───────────────────────────────────
 
-const ALL_CATEGORIES: &[&str] = &["All", "Identity", "Knowledge", "Operational", "Self-Model", "Sub-Agents"];
+const ALL_CATEGORIES: &[&str] = &["All", "Identity", "Knowledge", "Conversational", "Operational", "Self-Model", "Sub-Agents"];
 
 fn node_category(kind: NodeKind) -> &'static str {
     match kind {
         NodeKind::Soul | NodeKind::Belief | NodeKind::Goal => "Identity",
         NodeKind::Fact | NodeKind::Entity | NodeKind::Concept | NodeKind::Decision => "Knowledge",
+        NodeKind::UserInput => "Conversational",
         NodeKind::Session | NodeKind::Turn | NodeKind::LlmCall
         | NodeKind::ToolCall | NodeKind::LoopIteration => "Operational",
         NodeKind::Pattern | NodeKind::Limitation | NodeKind::Capability => "Self-Model",
@@ -323,7 +325,6 @@ pub async fn run_with_chat(
     db: Db,
     agent: Agent,
     session_id: String,
-    messages: Vec<Message>,
 ) -> std::io::Result<()> {
     enable_raw_mode()?;
     let mut stdout = std::io::stdout();
@@ -340,7 +341,6 @@ pub async fn run_with_chat(
     let mut app = App::new(nodes, edges);
 
     let agent = Arc::new(agent);
-    let messages = Arc::new(tokio::sync::Mutex::new(messages));
     let (result_tx, mut result_rx) = mpsc::unbounded_channel::<AgentResult>();
     let mut event_stream = EventStream::new();
 
@@ -371,12 +371,10 @@ pub async fn run_with_chat(
                                         app.chat_scroll_up = 0;
 
                                         let agent_c = agent.clone();
-                                        let msgs_c = messages.clone();
                                         let sid = session_id.clone();
                                         let tx = result_tx.clone();
                                         tokio::spawn(async move {
-                                            let mut msgs = msgs_c.lock().await;
-                                            match agent_c.run_turn(&sid, &mut msgs, &input).await {
+                                            match agent_c.run_turn(&sid, &input).await {
                                                 Ok(resp) => { let _ = tx.send(AgentResult::Response(resp)); }
                                                 Err(e) => { let _ = tx.send(AgentResult::Error(e.to_string())); }
                                             }
