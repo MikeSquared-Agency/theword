@@ -1,24 +1,24 @@
 # cede
 
-**Fork this. Build your own self-aware agent.**
+**Fork this. Build your own agent with embedded memory graphs.**
 
-cede is a forkable starter kit built on top of [cortex-embedded](https://github.com/MikeSquared-Agency/cortex-embedded) — the graph-memory cognitive engine. Fork this repo, shape the soul, add your own tools, and ship an agent that remembers everything.
+cede is a forkable starter kit built on top of [cortex-embedded](https://github.com/MikeSquared-Agency/cortex-embedded) — an embedded memory graph engine for AI agents. Fork this repo, shape the soul, add your own tools, and ship an agent whose entire memory lives in a single SQLite-backed graph.
 
 > **Want omnichannel?** See [**omni-cede**](https://github.com/MikeSquared-Agency/omni-cede) — a fork of cede that adds an HTTP API, identity resolution, and per-channel session management.
 
 ## Ecosystem
 
 ```
-cortex-embedded          <-- the engine (upstream)
+cortex-embedded          <-- embedded memory graph engine (upstream)
   |-- cede               <-- you are here (fork this to build your own agent)
        |-- omni-cede     <-- omnichannel variant (HTTP API, identity, sessions)
 ```
 
 ## What You Get
 
-Everything from cortex-embedded, packaged as a ready-to-run agent:
+Everything from cortex-embedded, packaged as a ready-to-run agent with an embedded memory graph:
 
-- **Graph memory** — 18 node kinds, 6 edge kinds, full provenance tracking
+- **Embedded memory graph** — 18 node kinds, 6 edge kinds, full provenance tracking
 - **Graph-native chat sessions** — fresh HNSW-based briefing per turn, no growing message history
 - **Hybrid recall** — semantic search + graph traversal + recency window (last 7 messages always included)
 - **Local embeddings** — BAAI/bge-small-en-v1.5 via fastembed (384-dim, no API calls)
