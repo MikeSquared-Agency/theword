@@ -13,6 +13,8 @@ use enigo::{Direction, Enigo, Keyboard, Settings};
 use rdev::{listen, Event, EventType, Key as RdevKey};
 use tokio::sync::mpsc;
 
+use std::sync::Mutex;
+
 use crate::audio::{AudioCapture, to_vad_mode};
 use crate::config::{DictationConfig, DictationMode, OutputMethod};
 use crate::db::queries;
@@ -58,7 +60,7 @@ pub struct DictationEngine {
     cortex: Arc<CortexEmbedded>,
     whisper: Arc<WhisperHandle>,
     llm: Option<Arc<dyn LlmClient>>,
-    config: DictationConfig,
+    pub config: Arc<Mutex<DictationConfig>>,
 }
 
 impl DictationEngine {
@@ -66,7 +68,7 @@ impl DictationEngine {
         cortex: Arc<CortexEmbedded>,
         whisper: Arc<WhisperHandle>,
         llm: Option<Arc<dyn LlmClient>>,
-        config: DictationConfig,
+        config: Arc<Mutex<DictationConfig>>,
     ) -> Self {
         Self { cortex, whisper, llm, config }
     }
@@ -75,10 +77,12 @@ impl DictationEngine {
     ///
     /// Blocks the calling thread while recording (up to `timeout`).
     pub async fn dictate_once(&self, timeout: Duration) -> Result<DictationResult> {
+        let config = self.config.lock().unwrap().clone();
+
         // 1. Capture audio
-        let vad_mode = to_vad_mode(&self.config.vad_mode);
-        let silence_ms = self.config.silence_threshold_ms;
-        let min_speech_ms = self.config.min_speech_ms;
+        let vad_mode = to_vad_mode(&config.vad_mode);
+        let silence_ms = config.silence_threshold_ms;
+        let min_speech_ms = config.min_speech_ms;
         let capture = AudioCapture::new(vad_mode, silence_ms, min_speech_ms);
 
         let utterance = tokio::task::spawn_blocking(move || {
@@ -104,11 +108,10 @@ impl DictationEngine {
         }
 
         // 3. LLM rewrite (if enabled)
-        let result = if self.config.rewrite_enabled {
+        let result = if config.rewrite_enabled {
             if let Some(ref llm) = self.llm {
-                self.rewrite(&raw_text, llm.as_ref()).await?
+                self.rewrite(&raw_text, llm.as_ref(), &config).await?
             } else {
-                // No LLM configured — just use raw transcript
                 DictationResult::Text(raw_text.clone())
             }
         } else {
@@ -116,7 +119,7 @@ impl DictationEngine {
         };
 
         // 4. Persist DictationTurn to graph
-        if self.config.learn_corrections {
+        if config.learn_corrections {
             let cleaned = match &result {
                 DictationResult::Text(t) => t.clone(),
                 DictationResult::Command { original, .. } => original.clone(),
@@ -126,7 +129,7 @@ impl DictationEngine {
         }
 
         // 5. Dispatch output
-        self.dispatch(&result).await?;
+        self.dispatch(&result, &config).await?;
 
         Ok(result)
     }
@@ -138,7 +141,7 @@ impl DictationEngine {
     /// (hold-to-talk) or toggled, triggers `dictate_once`.
     pub async fn run_listen_loop(self: Arc<Self>) -> Result<()> {
         let (tx, mut rx) = mpsc::channel::<HotkeyEvent>(8);
-        let hotkey = self.config.hotkey.clone();
+        let hotkey = self.config.lock().unwrap().hotkey.clone();
 
         // rdev::listen is blocking — run it on a dedicated OS thread
         std::thread::spawn(move || {
@@ -175,7 +178,7 @@ impl DictationEngine {
             }
         });
 
-        println!("theword listening. Hold {} to dictate.", self.config.hotkey.key);
+        println!("theword listening. Hold {} to dictate.", self.config.lock().unwrap().hotkey.key);
 
         while let Some(event) = rx.recv().await {
             match event {
@@ -205,11 +208,11 @@ impl DictationEngine {
 
     // ─── Private helpers ─────────────────────────────────
 
-    async fn rewrite(&self, raw: &str, llm: &dyn LlmClient) -> Result<DictationResult> {
+    async fn rewrite(&self, raw: &str, llm: &dyn LlmClient, config: &DictationConfig) -> Result<DictationResult> {
         // Build context briefing from graph memory
         let briefing = self
             .cortex
-            .briefing(raw, self.config.briefing_max_nodes)
+            .briefing(raw, config.briefing_max_nodes)
             .await
             .map(|b| b.context_doc)
             .unwrap_or_default();
@@ -224,11 +227,11 @@ impl DictationEngine {
         parse_rewrite_response(&resp.text, raw)
     }
 
-    async fn dispatch(&self, result: &DictationResult) -> Result<()> {
+    async fn dispatch(&self, result: &DictationResult, config: &DictationConfig) -> Result<()> {
         match result {
             DictationResult::Text(text) => {
                 let text = text.clone();
-                let method = self.config.output_method;
+                let method = config.output_method;
                 tokio::task::spawn_blocking(move || output_text(&text, method))
                     .await
                     .map_err(|e| CortexError::Tool(format!("spawn_blocking: {e}")))??;

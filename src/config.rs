@@ -1,7 +1,9 @@
+use serde::{Deserialize, Serialize};
+
 // ─── Dictation config ────────────────────────────────────
 
 /// Which Whisper model to use for STT. Larger = more accurate but slower.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WhisperModel {
     Tiny,
     TinyEn,
@@ -32,6 +34,22 @@ impl WhisperModel {
             self.filename()
         )
     }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Tiny    => "tiny",
+            Self::TinyEn  => "tiny.en",
+            Self::Base    => "base",
+            Self::BaseEn  => "base.en",
+            Self::Small   => "small",
+            Self::SmallEn => "small.en",
+            Self::Medium  => "medium",
+        }
+    }
+
+    pub fn all() -> Vec<Self> {
+        vec![Self::Tiny, Self::TinyEn, Self::Base, Self::BaseEn, Self::Small, Self::SmallEn, Self::Medium]
+    }
 }
 
 impl Default for WhisperModel {
@@ -41,12 +59,27 @@ impl Default for WhisperModel {
 }
 
 /// WebRTC VAD aggressiveness. Higher = more aggressive at filtering non-speech.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VadMode {
     Quality,
     LowBitrate,
     Aggressive,
     VeryAggressive,
+}
+
+impl VadMode {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Quality        => "Quality",
+            Self::LowBitrate     => "Low Bitrate",
+            Self::Aggressive     => "Aggressive",
+            Self::VeryAggressive => "Very Aggressive",
+        }
+    }
+
+    pub fn all() -> Vec<Self> {
+        vec![Self::Quality, Self::LowBitrate, Self::Aggressive, Self::VeryAggressive]
+    }
 }
 
 impl Default for VadMode {
@@ -56,7 +89,7 @@ impl Default for VadMode {
 }
 
 /// Whether to transcribe text or interpret as an agent command.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DictationMode {
     /// Always clean and type the transcribed text.
     Transcribe,
@@ -73,7 +106,7 @@ impl Default for DictationMode {
 }
 
 /// Where cleaned text is delivered.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OutputMethod {
     /// Simulate typing via enigo.
     Type,
@@ -83,6 +116,20 @@ pub enum OutputMethod {
     Both,
 }
 
+impl OutputMethod {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Type      => "Type",
+            Self::Clipboard => "Clipboard",
+            Self::Both      => "Both",
+        }
+    }
+
+    pub fn all() -> Vec<Self> {
+        vec![Self::Type, Self::Clipboard, Self::Both]
+    }
+}
+
 impl Default for OutputMethod {
     fn default() -> Self {
         Self::Type
@@ -90,7 +137,7 @@ impl Default for OutputMethod {
 }
 
 /// A keyboard hotkey definition.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HotkeyConfig {
     /// Key code string as recognised by rdev (e.g. "AltGr", "RightAlt", "F9").
     pub key: String,
@@ -108,7 +155,7 @@ impl Default for HotkeyConfig {
 }
 
 /// All dictation-specific configuration for theword.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DictationConfig {
     // ── STT ───────────────────────────────────────────────
     /// Whisper model to use.
@@ -162,6 +209,39 @@ impl Default for DictationConfig {
             briefing_max_nodes: 12,
         }
     }
+}
+
+// ─── Config file I/O ─────────────────────────────────────
+
+fn config_path() -> std::path::PathBuf {
+    dirs_next::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".theword")
+        .join("config.toml")
+}
+
+/// Load DictationConfig from `~/.theword/config.toml`, falling back to defaults.
+pub fn load_dictation_config() -> DictationConfig {
+    let path = config_path();
+    match std::fs::read_to_string(&path) {
+        Ok(s) => toml::from_str(&s).unwrap_or_else(|e| {
+            eprintln!("Warning: could not parse config ({e}), using defaults");
+            DictationConfig::default()
+        }),
+        Err(_) => DictationConfig::default(),
+    }
+}
+
+/// Save DictationConfig to `~/.theword/config.toml`.
+pub fn save_dictation_config(config: &DictationConfig) -> std::io::Result<()> {
+    let path = config_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let contents = toml::to_string_pretty(config).map_err(|e| {
+        std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
+    })?;
+    std::fs::write(path, contents)
 }
 
 // ─── Core agent config ───────────────────────────────────

@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use std::io::{self, BufRead, Write};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 mod graph_viz;
 mod graph_tui;
@@ -537,7 +537,7 @@ pub async fn run() -> crate::error::Result<()> {
         }
 
         Commands::Listen => {
-            let dict_config = crate::config::DictationConfig::default();
+            let dict_config = crate::config::load_dictation_config();
             let llm = build_llm_client(&ollama_spec).ok().map(|c| c as Arc<dyn crate::llm::LlmClient>);
 
             if llm.is_none() {
@@ -560,14 +560,14 @@ pub async fn run() -> crate::error::Result<()> {
                 Arc::new(cx),
                 Arc::new(whisper),
                 llm,
-                dict_config,
+                Arc::new(Mutex::new(dict_config)),
             ));
 
             engine.run_listen_loop().await
         }
 
         Commands::Dictate => {
-            let dict_config = crate::config::DictationConfig::default();
+            let dict_config = crate::config::load_dictation_config();
             let llm = build_llm_client(&ollama_spec).ok().map(|c| c as Arc<dyn crate::llm::LlmClient>);
 
             let model_path = crate::stt::resolve_model_path(
@@ -585,7 +585,7 @@ pub async fn run() -> crate::error::Result<()> {
                 Arc::new(cx),
                 Arc::new(whisper),
                 llm,
-                dict_config,
+                Arc::new(Mutex::new(dict_config)),
             );
 
             println!("Recording... speak now. (silence ends recording)");
@@ -674,7 +674,7 @@ pub async fn run() -> crate::error::Result<()> {
         },
 
         Commands::Gui => {
-            let dict_config = crate::config::DictationConfig::default();
+            let dict_config = crate::config::load_dictation_config();
             let llm = build_llm_client(&ollama_spec)
                 .ok()
                 .map(|c| c as Arc<dyn crate::llm::LlmClient>);
@@ -695,16 +695,20 @@ pub async fn run() -> crate::error::Result<()> {
             .await
             .map_err(|e| crate::error::CortexError::Stt(format!("spawn_blocking: {e}")))??;
 
+            // Shared config: both the engine and the GUI overlay hold a reference.
+            // Settings changed in the GUI take effect on the next dictation call.
+            let shared_config = Arc::new(Mutex::new(dict_config));
+
             let engine = Arc::new(crate::dictation::DictationEngine::new(
                 Arc::new(cx),
                 Arc::new(whisper),
                 llm,
-                dict_config,
+                shared_config.clone(),
             ));
 
             let rt = tokio::runtime::Handle::current();
             tokio::task::block_in_place(|| {
-                crate::gui::run(engine, rt)
+                crate::gui::run(engine, shared_config, rt)
                     .map_err(|e| crate::error::CortexError::Config(format!("GUI error: {e}")))
             })?;
             Ok(())
