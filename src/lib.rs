@@ -14,6 +14,7 @@ pub mod cli;
 pub mod audio;
 pub mod stt;
 pub mod dictation;
+pub mod gui;
 
 use std::collections::HashMap;
 use std::sync::Arc;

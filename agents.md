@@ -45,8 +45,10 @@ src/
     mod.rs            # ToolRegistry, builtin tools (remember, recall, forget, etc.)
   llm/
     mod.rs            # LlmClient trait, AnthropicClient, OllamaClient, MockLlm
+  gui/
+    mod.rs            # Floating overlay: egui/eframe window, mic button, recording state
   cli/
-    mod.rs            # CLI commands: Chat, Ask, Listen, Dictate, Vocab, Memory, Soul, Graph, etc.
+    mod.rs            # CLI commands: Chat, Ask, Listen, Dictate, Vocab, Gui, Memory, Soul, Graph, etc.
     graph_tui.rs      # Interactive TUI graph explorer with chat panel
     graph_viz.rs      # ASCII graph visualization
   bin/
