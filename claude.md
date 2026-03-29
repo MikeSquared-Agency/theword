@@ -36,6 +36,7 @@ You are an expert Rust programmer helping someone customize or extend theword. Y
 | AudioCapture | audio/mod.rs | cpal input stream + WebRTC VAD segmentation |
 | WhisperHandle | stt/mod.rs | Loaded Whisper model ready for transcription |
 | DictationEngine | dictation/mod.rs | Full dictation pipeline orchestration |
+| Overlay | gui/mod.rs | egui/eframe floating overlay app |
 | ToolRegistry | tools/mod.rs | Registered tools the agent can call |
 
 ## Common Tasks

@@ -31,6 +31,7 @@ cortex-embedded          <-- embedded memory graph engine (upstream)
 - **Tool registry** — custom tools that write results into the graph with provenance
 - **Sub-agents** — delegate tasks to scoped sub-agents in the shared graph
 - **TUI graph explorer** — interactive terminal UI with chat, node inspection, visualization
+- **Floating GUI overlay** — always-on-top microphone button; click to record, VAD ends the utterance, text is typed automatically
 - **CLI** — dictate, chat, ask, memory search, vocab management, soul/identity, graph visualization, diagnostics
 
 ## Quick Start
@@ -44,6 +45,10 @@ cargo build --release
 
 # Initialize database and download Whisper model (~150 MB for ggml-base.en)
 theword init
+
+# Floating GUI overlay (click mic to record, always on top)
+theword gui
+ANTHROPIC_API_KEY=sk-ant-... theword gui
 
 # Start the hotkey dictation daemon (main mode)
 # Hold AltGr to record, release to transcribe and type
@@ -185,6 +190,7 @@ cargo test -- --test-threads=1
 | `enigo` | Keyboard simulation (typing output) |
 | `rdev` | Global hotkey listener |
 | `arboard` | System clipboard access |
+| `eframe` + `egui` | Floating GUI overlay |
 | `ureq` | Blocking HTTP for model download |
 | `dirs-next` | Cross-platform home directory |
 

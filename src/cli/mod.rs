@@ -74,6 +74,9 @@ pub enum Commands {
         #[command(subcommand)]
         action: VocabAction,
     },
+
+    /// Launch the floating GUI overlay
+    Gui,
 }
 
 #[derive(Subcommand)]
@@ -669,6 +672,43 @@ pub async fn run() -> crate::error::Result<()> {
                 Ok(())
             }
         },
+
+        Commands::Gui => {
+            let dict_config = crate::config::DictationConfig::default();
+            let llm = build_llm_client(&ollama_spec)
+                .ok()
+                .map(|c| c as Arc<dyn crate::llm::LlmClient>);
+
+            if llm.is_none() {
+                eprintln!("Note: no LLM configured — transcription will be used as-is.");
+                eprintln!("Use --ollama or set ANTHROPIC_API_KEY to enable rewriting.\n");
+            }
+
+            let model_path = crate::stt::resolve_model_path(
+                &dict_config.whisper_model,
+                dict_config.whisper_model_path.as_deref(),
+            )?;
+            let language = dict_config.language.clone();
+            let whisper = tokio::task::spawn_blocking(move || {
+                crate::stt::WhisperHandle::load(&model_path, language)
+            })
+            .await
+            .map_err(|e| crate::error::CortexError::Stt(format!("spawn_blocking: {e}")))??;
+
+            let engine = Arc::new(crate::dictation::DictationEngine::new(
+                Arc::new(cx),
+                Arc::new(whisper),
+                llm,
+                dict_config,
+            ));
+
+            let rt = tokio::runtime::Handle::current();
+            tokio::task::block_in_place(|| {
+                crate::gui::run(engine, rt)
+                    .map_err(|e| crate::error::CortexError::Config(format!("GUI error: {e}")))
+            })?;
+            Ok(())
+        }
 
         Commands::Ask { query } => {
             let llm = build_llm_client(&ollama_spec)?;
