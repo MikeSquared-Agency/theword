@@ -67,16 +67,17 @@ impl WhisperHandle {
             .full(params, &samples_f32)
             .map_err(|e| CortexError::Stt(format!("whisper inference failed: {e}")))?;
 
-        let n_segments = state
-            .full_n_segments()
-            .map_err(|e| CortexError::Stt(format!("failed to get segment count: {e}")))?;
+        let n_segments = state.full_n_segments();
 
         let mut text = String::new();
         for i in 0..n_segments {
             let segment = state
-                .full_get_segment_text(i)
-                .map_err(|e| CortexError::Stt(format!("failed to get segment {i}: {e}")))?;
-            text.push_str(segment.trim());
+                .get_segment(i)
+                .ok_or_else(|| CortexError::Stt(format!("segment {i} out of bounds")))?;
+            let segment_text = segment
+                .to_str()
+                .map_err(|e| CortexError::Stt(format!("failed to get segment {i} text: {e}")))?;
+            text.push_str(segment_text.trim());
             text.push(' ');
         }
 

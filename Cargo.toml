@@ -43,7 +43,7 @@ webrtc-vad       = "0.4"
 
 # ── speech-to-text (whisper.cpp via FFI) ─────────────────────────────────────
 # Requires C++ toolchain at build time; GPU optional (feature = "cuda" or "metal")
-whisper-rs       = "0.13"
+whisper-rs       = "0.16"
 
 # ── keyboard simulation ──────────────────────────────────────────────────────
 enigo            = "0.2"
