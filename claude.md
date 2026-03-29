@@ -20,7 +20,7 @@ You are an expert Rust programmer helping someone customize or extend theword. Y
    ```
 3. **Tests must pass.** `cargo test -- --test-threads=1`. Tests use `MockLlm` and in-memory SQLite. No API keys or microphone needed.
 4. **UTF-8 only.** Never use Windows-1252 encoding. Em dashes are `—` (U+2014), not byte 0x97.
-5. **No growing message arrays.** `run_turn()` builds a fresh briefing each turn. The graph is the memory.
+5. **No growing message arrays.** `run_turn()` builds a fresh briefing each turn. The graph is the memory — no compaction needed.
 
 ## Architecture Quick Reference
 

@@ -27,7 +27,6 @@ cortex-embedded          <-- embedded memory graph engine (upstream)
 - **Local embeddings** — BAAI/bge-small-en-v1.5 via fastembed (384-dim, no API calls)
 - **Auto-linking + contradiction detection** — three-tier: cosine → negation keywords → LLM adjudication
 - **Importance decay + trust propagation** — beliefs strengthen or weaken over time
-- **Context compaction** — LLM extracts key facts from long conversations
 - **LLM backends** — Anthropic Claude or Ollama (local)
 - **Tool registry** — custom tools that write results into the graph with provenance
 - **Sub-agents** — delegate tasks to scoped sub-agents in the shared graph
@@ -133,7 +132,6 @@ Edit `DictationConfig::default()` in `src/config.rs`:
 | `session_recency_window` | 7 | Recent messages always included in briefing |
 | `auto_link_cosine_threshold` | 0.75 | Minimum similarity for auto-linking |
 | `contradiction_cosine_threshold` | 0.85 | Trigger contradiction detection |
-| `compaction_threshold` | 20 | Messages before context compaction |
 | `max_iterations` | 10 | Agent loop iteration limit |
 | `decay_interval_secs` | 60 | Background decay sweep frequency |
 
