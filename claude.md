@@ -1,16 +1,16 @@
-# claude.md — Instructions for Claude Working on cede
+# claude.md — Instructions for Claude Working on theword
 
 ## Identity
 
-You are working on **cede** — a forkable starter kit for building self-aware AI agents, built by MikeSquared Agency. This repo is forked from cortex-embedded and is designed to be forked again by users who want to build their own agent.
+You are working on **theword** — a local, privacy-first voice dictation tool with persistent graph memory, built by MikeSquared Agency. It is forked from cede (which is forked from cortex-embedded) and adds a full voice dictation pipeline on top of the existing agent/graph infrastructure.
 
 ## Your Role
 
-You are an expert Rust programmer helping someone customize their agent. You understand the graph-memory architecture and can guide users through adding tools, shaping personality, and extending capabilities.
+You are an expert Rust programmer helping someone customize or extend theword. You understand the graph-memory architecture and the dictation pipeline, and can guide users through changing hotkeys, swapping Whisper models, adding tools, and extending capabilities.
 
 ## Critical Rules
 
-1. **Keep it forkable.** cede is a template. Don't add features that belong in omni-cede (HTTP API, identity, sessions) or cortex-embedded (engine internals). Keep it clean and simple.
+1. **Don't break the audio pipeline.** All audio is 16 kHz mono i16 PCM. Whisper and WebRTC VAD both require this — do not introduce resampling or format changes.
 2. **All DB access through `db.call()`** — the established async pattern:
    ```rust
    db.call(move |conn| {
@@ -18,7 +18,7 @@ You are an expert Rust programmer helping someone customize their agent. You und
        Ok(result)
    }).await?
    ```
-3. **Tests must pass.** `cargo test -- --test-threads=1` — 28 tests. They use `MockLlm` and in-memory SQLite. No API keys needed.
+3. **Tests must pass.** `cargo test -- --test-threads=1`. Tests use `MockLlm` and in-memory SQLite. No API keys or microphone needed.
 4. **UTF-8 only.** Never use Windows-1252 encoding. Em dashes are `—` (U+2014), not byte 0x97.
 5. **No growing message arrays.** `run_turn()` builds a fresh briefing each turn. The graph is the memory.
 
@@ -31,23 +31,30 @@ You are an expert Rust programmer helping someone customize their agent. You und
 | Db | db/mod.rs | Arc<Mutex<Connection>> with async wrapper |
 | VectorIndex | hnsw/mod.rs | 2-tier HNSW for semantic search |
 | EmbedHandle | embed/mod.rs | fastembed with LRU cache |
-| Config | config.rs | All tunable parameters |
+| Config | config.rs | Core agent tunable parameters |
+| DictationConfig | config.rs | Dictation-specific config (Whisper, VAD, hotkey, output) |
+| AudioCapture | audio/mod.rs | cpal input stream + WebRTC VAD segmentation |
+| WhisperHandle | stt/mod.rs | Loaded Whisper model ready for transcription |
+| DictationEngine | dictation/mod.rs | Full dictation pipeline orchestration |
 | ToolRegistry | tools/mod.rs | Registered tools the agent can call |
 
-## Common Tasks for Fork Customization
+## Common Tasks
 
-### Renaming the Agent
-1. Change `name` in `Cargo.toml`
-2. Rename `src/bin/cede.rs` to your agent's name
-3. Update the `[[bin]]` section in `Cargo.toml`
+### Changing the Hotkey
+Edit `HotkeyConfig::default()` in `src/config.rs`. Supported keys: `AltGr`, `Alt`, `F9`, `F10`, `F11`, `F12`. Toggle vs hold-to-talk is controlled by `hold_to_talk: bool`.
+
+### Changing the Whisper Model
+Edit `WhisperModel::default()` in `src/config.rs`, then run `theword init` to download the new model weights to `~/.theword/models/`.
+
+### Changing Output Method
+Edit `OutputMethod::default()` in `src/config.rs`. Options: `Type` (enigo keyboard), `Clipboard` (arboard), `Both`.
 
 ### Shaping the Soul
+Use the TUI:
 ```bash
-cede soul add "I am a helpful research assistant specializing in biology."
-cede soul add --kind belief "I believe in citing sources for every claim."
-cede soul add --kind goal "Help users understand complex papers."
+theword soul edit
 ```
-Soul, Belief, and Goal nodes have zero decay — they persist forever.
+Or add soul/belief/goal nodes via the graph TUI. Soul, Belief, and Goal nodes have zero decay — they persist forever.
 
 ### Adding a New Tool
 In `src/tools/mod.rs`, add to `ToolRegistry::builtins()`:
@@ -74,7 +81,7 @@ registry.register(Tool {
 
 ### Pulling Upstream Updates
 ```bash
-git remote add upstream https://github.com/MikeSquared-Agency/cortex-embedded.git
+git remote add upstream https://github.com/MikeSquared-Agency/cede.git
 git fetch upstream
 git merge upstream/master
 ```
@@ -90,7 +97,11 @@ git merge upstream/master
 ## Common Pitfalls
 
 - **CortexError::DbTask** — NOT `CortexError::Database`
+- **CortexError::Audio / CortexError::Stt** — use the correct variant for audio/STT errors
 - HNSW buffer must be flushed (`build()`) before queries see new vectors
-- fastembed downloads the model on first call — tests use mock embeddings
+- fastembed downloads the embedding model on first call — tests use mock embeddings
+- Whisper model must be downloaded first: `theword init` (stores in `~/.theword/models/`)
+- Audio capture is blocking — always call via `tokio::task::spawn_blocking`
 - SQLite WAL mode — one writer at a time
 - Session recency window is 7 turns by default (configurable in Config)
+- `theword soul` has `show` and `edit` subcommands — there is no `soul add`

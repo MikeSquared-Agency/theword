@@ -1,88 +1,132 @@
-# cede
+# theword
 
-**Fork this. Build your own agent with embedded memory graphs.**
+**Local, privacy-first voice dictation with persistent graph memory.**
 
-cede is a forkable starter kit built on top of [cortex-embedded](https://github.com/MikeSquared-Agency/cortex-embedded) — an embedded memory graph engine for AI agents. Fork this repo, shape the soul, add your own tools, and ship an agent whose entire memory lives in a single SQLite-backed graph.
+theword captures audio from your microphone, transcribes it with a local Whisper model, optionally rewrites it with a small LLM, and types the result wherever your cursor is. Everything it learns about your vocabulary and writing style is stored in a SQLite-backed memory graph that grows smarter over time.
 
-> **Want omnichannel?** See [**omni-cede**](https://github.com/MikeSquared-Agency/omni-cede) — a fork of cede that adds an HTTP API, identity resolution, and per-channel session management.
+> **Built on [cede](https://github.com/MikeSquared-Agency/cede)**, which itself is built on [cortex-embedded](https://github.com/MikeSquared-Agency/cortex-embedded).
 
 ## Ecosystem
 
 ```
 cortex-embedded          <-- embedded memory graph engine (upstream)
-  |-- cede               <-- you are here (fork this to build your own agent)
-       |-- omni-cede     <-- omnichannel variant (HTTP API, identity, sessions)
+  |-- cede               <-- forkable agent starter kit
+       |-- theword        <-- you are here (dictation + graph memory)
 ```
 
 ## What You Get
 
-Everything from cortex-embedded, packaged as a ready-to-run agent with an embedded memory graph:
-
-- **Embedded memory graph** — 18 node kinds, 6 edge kinds, full provenance tracking
-- **Graph-native chat sessions** — fresh HNSW-based briefing per turn, no growing message history
+- **Voice dictation** — hold a hotkey (default: AltGr), speak, release; text is typed at your cursor
+- **Local Whisper STT** — whisper.cpp via whisper-rs; models from `ggml-tiny.en` to `ggml-medium`
+- **WebRTC VAD** — speech boundary detection; no fixed recording length
+- **LLM transcript rewrite** — remove filler words, fix punctuation, detect commands (optional; works with Ollama or Anthropic)
+- **Vocab learning** — corrections are persisted as zero-decay `VocabEntry` nodes; the rewrite LLM is briefed with them
+- **Embedded memory graph** — 20 node kinds, 6 edge kinds, full provenance tracking
+- **Graph-native memory** — fresh HNSW-based briefing per turn, no growing message history
 - **Hybrid recall** — semantic search + graph traversal + recency window (last 7 messages always included)
 - **Local embeddings** — BAAI/bge-small-en-v1.5 via fastembed (384-dim, no API calls)
-- **Auto-linking + contradiction detection** — three-tier: cosine -> negation keywords -> LLM adjudication
-- **Importance decay + trust propagation** — the agent's beliefs strengthen or weaken over time
+- **Auto-linking + contradiction detection** — three-tier: cosine → negation keywords → LLM adjudication
+- **Importance decay + trust propagation** — beliefs strengthen or weaken over time
 - **Context compaction** — LLM extracts key facts from long conversations
 - **LLM backends** — Anthropic Claude or Ollama (local)
-- **Tool registry** — add custom tools that write results into the graph with provenance
+- **Tool registry** — custom tools that write results into the graph with provenance
 - **Sub-agents** — delegate tasks to scoped sub-agents in the shared graph
 - **TUI graph explorer** — interactive terminal UI with chat, node inspection, visualization
-- **CLI** — chat, ask, memory search, soul/identity management, graph visualization, diagnostics
+- **CLI** — dictate, chat, ask, memory search, vocab management, soul/identity, graph visualization, diagnostics
 
 ## Quick Start
 
 ```bash
-# Clone your fork
-git clone https://github.com/YOUR_USERNAME/cede.git
-cd cede
+git clone https://github.com/MikeSquared-Agency/theword.git
+cd theword
 
-# Build
+# Build (requires C++ toolchain for whisper.cpp)
 cargo build --release
 
-# Initialize database and download embedding model
-cede init
+# Initialize database and download Whisper model (~150 MB for ggml-base.en)
+theword init
 
-# Start chatting (pick one LLM backend)
-ANTHROPIC_API_KEY=sk-ant-... cede chat
-cede --ollama llama3 chat
+# Start the hotkey dictation daemon (main mode)
+# Hold AltGr to record, release to transcribe and type
+ANTHROPIC_API_KEY=sk-ant-... theword listen
+# or with a local LLM for the rewrite pass:
+theword --ollama qwen2.5:1.5b listen
+
+# Record a single utterance (no hotkey, for testing)
+theword dictate
+
+# Interactive chat session (uses graph memory)
+ANTHROPIC_API_KEY=sk-ant-... theword chat
+theword --ollama qwen2.5:1.5b chat
 
 # Single query
-cede ask "What do you know?"
+theword ask "What do you know?"
 
 # Interactive graph explorer
-ANTHROPIC_API_KEY=sk-ant-... cede graph explore
+ANTHROPIC_API_KEY=sk-ant-... theword graph explore
 
 # Graph overview
-cede graph overview
+theword graph overview
 
 # Memory operations
-cede memory stats
-cede memory search "topic"
-cede memory show <node_id>
+theword memory stats
+theword memory search "topic"
+theword memory show <node_id>
+
+# Vocabulary corrections
+theword vocab list
+theword vocab add "sea dee" "cede"
+theword vocab remove "sea dee"
 
 # Identity
-cede soul show
+theword soul show
+theword soul edit
 
 # Diagnostics
-cede doctor
-cede consolidate
+theword doctor
+theword consolidate
 ```
 
-## How to Make It Yours
+## How It Works
 
-### 1. Shape the Soul
+### Dictation Pipeline
 
-Edit the seed identity in `src/lib.rs` — the `seed_identity()` function creates the initial `Soul` node. Change the body text to define who your agent is.
+```
+microphone
+  → cpal (16 kHz mono PCM)
+  → WebRTC VAD (30 ms frames, silence detection)
+  → Whisper STT (local ggml model via whisper-rs)
+  → LLM rewrite (filler removal, punctuation, command detection)
+  → enigo (keyboard simulation) / arboard (clipboard)
+```
 
-### 2. Add Custom Tools
+The rewrite LLM is given a context briefing from the graph — your soul nodes, recent vocab corrections, and semantically similar past turns — so it learns your writing style and domain vocabulary over time.
 
-Register tools in `src/tools/mod.rs`. Each tool is a function that takes parameters and returns a `ToolResult`. Tool calls are automatically tracked as `ToolCall` nodes in the graph.
+### Memory Graph
 
-### 3. Tune the Config
+Every dictation turn, vocabulary correction, chat session, and tool call is a node in a single SQLite-backed graph. Nodes are connected by typed edges (RelatesTo, Contradicts, Supports, DerivesFrom, PartOf, Supersedes). Semantic search uses a 2-tier HNSW index backed by 384-dim local embeddings.
 
-Adjust `src/config.rs` defaults:
+## Tuning
+
+### Dictation Config
+
+Edit `DictationConfig::default()` in `src/config.rs`:
+
+| Parameter | Default | What it does |
+|-----------|---------|-------------|
+| `whisper_model` | `BaseEn` | Whisper model size (Tiny/Base/Small/Medium) |
+| `language` | `"en"` | BCP-47 hint for Whisper; `None` = auto-detect |
+| `vad_mode` | `Aggressive` | WebRTC VAD aggressiveness |
+| `silence_threshold_ms` | 700 | Milliseconds of silence that end an utterance |
+| `min_speech_ms` | 300 | Discard clips shorter than this |
+| `hotkey.key` | `"AltGr"` | Trigger key (`AltGr`, `Alt`, `F9`–`F12`) |
+| `hotkey.hold_to_talk` | `true` | Hold = record; `false` = toggle |
+| `rewrite_enabled` | `true` | Run transcript through LLM for cleanup |
+| `rewrite_model` | `"qwen2.5:1.5b"` | Ollama model for the rewrite pass |
+| `output_method` | `Type` | `Type` / `Clipboard` / `Both` |
+| `learn_corrections` | `true` | Persist vocab corrections to graph |
+
+### Core Agent Config
 
 | Parameter | Default | What it does |
 |-----------|---------|-------------|
@@ -93,40 +137,34 @@ Adjust `src/config.rs` defaults:
 | `max_iterations` | 10 | Agent loop iteration limit |
 | `decay_interval_secs` | 60 | Background decay sweep frequency |
 
-### 4. Staying Updated
-
-cede tracks cortex-embedded as the `upstream` remote. To pull engine improvements:
-
-```bash
-git fetch upstream
-git merge upstream/master
-```
-
 ## Architecture
 
 ```
-+-----------------------------------------+
-|                  cede                    |
-+---------+----------+---------+----------+
-|  recall | briefing |  tools  |  agent   |
-| (HNSW + | (scored  | (custom | (loop +  |
-|  graph) |  context)|  + std) | subagent)|
-+---------+----------+---------+----------+
-|            graph + memory               |
-|       (BFS, scoring, decay)             |
-+---------+-------------------------------+
-|  HNSW   |         SQLite                |
-| (2-tier)|  (WAL, bundled rusqlite)      |
-+---------+-------------------------------+
-|            fastembed                     |
-|      (BAAI/bge-small-en-v1.5)           |
-+-----------------------------------------+
++---------------------------------------------------+
+|                    theword                         |
++------------+----------+-----------+---------------+
+|  dictation | recall   | briefing  |  agent        |
+| (audio →   | (HNSW +  | (scored   | (loop +       |
+|  VAD →     |  graph)  |  context) |  subagent)    |
+|  stt →     |          |           |               |
+|  rewrite → |          |           |               |
+|  output)   |          |           |               |
++------------+----------+-----------+---------------+
+|                  graph + memory                    |
+|           (BFS, scoring, decay)                    |
++---------+------------------------------------------+
+|  HNSW   |              SQLite                      |
+| (2-tier)|       (WAL, bundled rusqlite)            |
++---------+------------------------------------------+
+|            fastembed                               |
+|      (BAAI/bge-small-en-v1.5)                      |
++----------------------------------------------------+
 ```
 
 ## Tests
 
 ```bash
-# Run all 28 tests
+# Run all tests
 cargo test -- --test-threads=1
 ```
 
@@ -142,6 +180,15 @@ cargo test -- --test-threads=1
 | `clap` | CLI argument parsing |
 | `ratatui` + `crossterm` | TUI graph explorer |
 | `async-channel` | Background task channels |
+| `cpal` | Cross-platform audio capture |
+| `ringbuf` | Lock-free ring buffer for audio stream |
+| `webrtc-vad` | Voice activity detection |
+| `whisper-rs` | Whisper.cpp bindings for local STT |
+| `enigo` | Keyboard simulation (typing output) |
+| `rdev` | Global hotkey listener |
+| `arboard` | System clipboard access |
+| `ureq` | Blocking HTTP for model download |
+| `dirs-next` | Cross-platform home directory |
 
 ## License
 
