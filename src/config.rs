@@ -169,8 +169,6 @@ impl Default for DictationConfig {
 /// Runtime configuration for a CortexEmbedded instance.
 #[derive(Debug, Clone)]
 pub struct Config {
-    /// Message count threshold before context compaction triggers.
-    pub compaction_threshold: usize,
     /// Maximum agent loop iterations before forced stop.
     pub max_iterations: usize,
     /// Seconds between background decay sweeps.
@@ -207,7 +205,6 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            compaction_threshold: 20,
             max_iterations: 10,
             decay_interval_secs: 60,
             auto_link_cosine_threshold: 0.75,

@@ -222,21 +222,6 @@ impl Agent {
                         .await?;
                     let _ = self.auto_link_tx.try_send(fact_id);
 
-                    // Context compaction: extract facts from long conversations
-                    if messages.len() > self.config.compaction_threshold {
-                        let _ = crate::compact_session(
-                            &self.db,
-                            &self.embed,
-                            &self.hnsw,
-                            &self.config,
-                            &self.auto_link_tx,
-                            &session_id,
-                            &messages,
-                            self.llm.as_ref(),
-                        )
-                        .await;
-                    }
-
                     return Ok(response.text);
                 }
             }
